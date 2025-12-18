@@ -2,8 +2,9 @@ import sys
 from sample_decorators.timer import timer
 from sample_decorators.tracer import tracer
 from time import time
+#from calculator import Calculator
 
-class Solution:
+class Solution_leet_283:
     @timer
     @tracer
     def moveZeroes(self, nums: list[int]) -> None:
@@ -25,7 +26,7 @@ class Solution:
 
 def main():
     data = list(map(int, input().split()))
-    solution = Solution()
+    solution = Solution_leet_283()
     solution.moveZeroes(data)
     print(data)
 
