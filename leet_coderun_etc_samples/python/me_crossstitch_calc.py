@@ -110,11 +110,11 @@ def main():
     fishes = OneSchemeProbability(N_fishes, N_birds, N_garden)
     print(f"Fishes will be finished first with probability = {fishes.сalc()}.")
 
-    #road
+    #birds
     birds = OneSchemeProbability(N_birds, N_fishes, N_garden)
     print(f"Birds will be finished first with probability = {birds.сalc()}.")
 
-    #planet
+    #garden
     garden = OneSchemeProbability(N_garden, N_birds, N_fishes)
     print(f"Garden will be finished first with probability = {garden.сalc()}.")
 
