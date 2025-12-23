@@ -25,6 +25,3 @@ target_include_directories(check_leet_coderun
     leet_tasks
     me_tasks
 )
-
-
-
