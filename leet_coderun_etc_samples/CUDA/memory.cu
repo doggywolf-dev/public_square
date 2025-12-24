@@ -1,10 +1,10 @@
-#include <cstdio>
-#include <cuda_runtime_api.h>
-#include <cstdlib>
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <cuda_runtime_api.h>
 #include <numeric>
-#include <string>
 #include <stdexcept>
+#include <string>
 
 void CheckCudaError(cudaError_t cudaError) {
     if (cudaError != cudaSuccess) {
