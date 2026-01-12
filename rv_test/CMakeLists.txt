@@ -12,7 +12,7 @@ add_subdirectory(lib)
 
 add_executable(bin_pkrv_test main.cpp)
 
-# Связывание с OpenCV
+# Linking with OpenCV
 target_link_libraries(bin_pkrv_test
     ${OpenCV_LIBS}
     PkrvTestLib
