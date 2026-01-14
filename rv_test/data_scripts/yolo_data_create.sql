@@ -2,23 +2,33 @@ PRAGMA yt.InferSchema = '1000';
 PRAGMA yt.IgnoreWeakSchema;
 PRAGMA AnsiInForEmptyOrNullableItemsCollections;
 
+-- Python-скрипт для конвертации аннотаций в формат YOLO
 $script = @@#py
 
 def convert_to_yolo(category_id: int, image_height: float, image_width: float, bbox: list) -> str:
+    # Обработка только целевых категорий: 5 (самолет), 16 (птица), 38 (воздушный змей)
     if category_id not in [5, 16, 38]:
         return ""
 
+    # Преобразование ID категории в ID класса для YOLO (0, 1, 2)
     class_id = 0 if category_id == 5 else 1 if category_id == 16 else 2
+
+    # Вычисление нормализованных координат центра объекта
     x_center = float(bbox[0] + bbox[2]/2.0) / image_width
     y_center = float(bbox[1] + bbox[3]/2.0)/ image_height
+
+    # Вычисление нормализованных размеров объекта
     width = float(bbox[2]) / image_width
     height = float(bbox[3]) / image_height
 
+    # Возврат строки в формате YOLO
     return f"{class_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}"
 @@;
 
+-- Регистрация Python-функции для использования в SQL
 $convert_to_yolo = Python3::convert_to_yolo(Callable <(Optional<Int64>, Optional<Float>, Optional<Float>, List<Optional<Double>>)->String?>, $script);
 
+-- Объединение всех изображений из наборов set1 и set2
 $united = (
     SELECT
         "1" AS `set`,
@@ -35,6 +45,7 @@ $united = (
         Range(`set2/`, ``, ``, ``)
 );
 
+-- Получение уникальных изображений с их наборами и типами
 $unique_images = (
     SELECT
         image_id,
@@ -46,6 +57,7 @@ $unique_images = (
         image_id, `set`, `type`
 );
 
+-- Формирование путей к файлам изображений и меток YOLO
 $file_names = (
     SELECT
         a.image_id AS image_id,
@@ -59,11 +71,13 @@ $file_names = (
     INNER JOIN CONCAT(`instances_val_2017_images`, `instances_train_2017_images`) AS b ON a.image_id == b.id
 );
 
+-- Сохранение путей к изображениям
 INSERT INTO `images_yolo_paths` WITH TRUNCATE
 SELECT
     file_name AS image_file_name
 FROM $file_names;
 
+-- Добавление аннотаций к изображениям и конвертация в формат YOLO
 $with_annotations = (
     SELECT
         a.*,
@@ -88,6 +102,7 @@ $with_annotations = (
     LEFT JOIN CONCAT(`instances_val_2017_annotations`, `instances_train_2017_annotations`) AS b ON a.image_id == b.image_id
 );
 
+-- Группировка всех аннотаций для одного изображения
 $annotations_only = (
     SELECT
         yolo_txt,
@@ -99,6 +114,7 @@ $annotations_only = (
     GROUP BY yolo_txt
 );
 
+-- Сохранение файлов с метками YOLO
 INSERT INTO `annotation_yolo_paths` WITH TRUNCATE
 SELECT
     yolo_txt AS txt_file_name,

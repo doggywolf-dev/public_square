@@ -2,6 +2,7 @@ PRAGMA yt.InferSchema = '1000';
 PRAGMA yt.IgnoreWeakSchema;
 PRAGMA AnsiInForEmptyOrNullableItemsCollections;
 
+-- Объединение категорий и изображений из обучающей и валидационной выборок в уникальные пары
 $cats_n_images_only = (
     SELECT
         category_id AS category_id,
@@ -22,6 +23,7 @@ $cats_n_images_only = (
     GROUP BY category_id, image_id
 );
 
+-- Позитивная выборка: изображения с категориями 5 (самолет), 16 (птица), 38 (воздушный змей)
 $positive_set = (
     SELECT
         image_id AS image_id,
@@ -33,6 +35,7 @@ $positive_set = (
     GROUP BY image_id
 );
 
+-- Негативная выборка: изображения без целевых категорий
 $negative_set = (
     SELECT
         image_id AS image_id,
@@ -45,6 +48,7 @@ $negative_set = (
     GROUP BY image_id
 );
 
+-- Пустая выборка: изображения без аннотаций
 $blank_set = (
     SELECT
         id AS image_id,
@@ -65,6 +69,7 @@ $blank_set = (
     GROUP BY id, random(id) AS rand
 );
 
+-- Рабочий набор: все позитивные + 784 негативных + 184 пустых изображения
 $work_set = (
     SELECT
         a.*,
@@ -101,8 +106,7 @@ $work_set = (
     ) AS a
 );
 
-SELECT * from $work_set;
-
+-- Золотой стандарт: 150 случайных изображений для оценки качества
 $golden_set = (
     SELECT
         *
@@ -112,6 +116,7 @@ $golden_set = (
     LIMIT 150
 );
 
+-- Сохранение золотого стандарта в первый набор
 INSERT INTO `set1/golden_set` WITH TRUNCATE
 SELECT
     image_id AS image_id,
@@ -119,6 +124,7 @@ SELECT
 FROM
     $golden_set;
 
+-- Подсчет статистики по категориям в золотом стандарте
 SELECT
     COUNT_IF(5 IN categories) AS airplane_count,
     COUNT_IF(16 IN categories) AS bird_count,
@@ -128,13 +134,7 @@ SELECT
 FROM
     $golden_set;
 
-INSERT INTO `set2/golden_set` WITH TRUNCATE
-SELECT
-    image_id AS image_id,
-    categories AS categories
-FROM
-    $golden_set;
-
+-- Тестовая выборка 1: 1906 изображений (исключая золотой стандарт)
 $test_set1 = (
     SELECT
         image_id AS image_id,
@@ -146,12 +146,14 @@ $test_set1 = (
     LIMIT 1906
 );
 
+-- Сохранение тестовой выборки 1
 INSERT INTO `set1/test` WITH TRUNCATE
 SELECT
     *
 FROM
     $test_set1;
 
+-- Статистика тестовой выборки 1
 SELECT
     COUNT_IF(5 IN categories) AS airplane_count,
     COUNT_IF(16 IN categories) AS bird_count,
@@ -161,32 +163,7 @@ SELECT
 FROM
     $test_set1;
 
-$test_set2 = (
-    SELECT
-        image_id AS image_id,
-        categories AS categories
-    FROM
-        $work_set
-    WHERE image_id not IN (select image_id from $golden_set)
-    ORDER BY rand
-    LIMIT 1430
-);
-
-INSERT INTO `set2/test` WITH TRUNCATE
-SELECT
-    *
-FROM
-    $test_set2;
-
-SELECT
-    COUNT_IF(5 IN categories) AS airplane_count,
-    COUNT_IF(16 IN categories) AS bird_count,
-    COUNT_IF(38 IN categories) AS kite_count,
-    COUNT_IF(ListLength(categories) == 0) AS blank_count,
-    COUNT_IF((ListLength(categories) > 0) and not (5 IN categories) and not (16 IN categories) and not (38 IN categories)) AS other_count
-FROM
-    $test_set2;
-
+-- Валидационная выборка 1: 1906 изображений (исключая золотой стандарт и тест 1)
 $validate_set1 = (
     SELECT
         image_id AS image_id,
@@ -198,12 +175,14 @@ $validate_set1 = (
     LIMIT 1906
 );
 
+-- Сохранение валидационной выборки 1
 INSERT INTO `set1/val` WITH TRUNCATE
 SELECT
     *
 FROM
     $validate_set1;
 
+-- Статистика валидационной выборки 1
 SELECT
     COUNT_IF(5 IN categories) AS airplane_count,
     COUNT_IF(16 IN categories) AS bird_count,
@@ -213,32 +192,7 @@ SELECT
 FROM
     $validate_set1;
 
-$validate_set2 = (
-    SELECT
-        image_id AS image_id,
-        categories AS categories
-    FROM
-        $work_set
-    WHERE (image_id not IN (select image_id from $golden_set)) and (image_id not IN (select image_id from $test_set2))
-    ORDER BY rand
-    LIMIT 1430
-);
-
-INSERT INTO `set2/val` WITH TRUNCATE
-SELECT
-    *
-FROM
-    $validate_set2;
-
-SELECT
-    COUNT_IF(5 IN categories) AS airplane_count,
-    COUNT_IF(16 IN categories) AS bird_count,
-    COUNT_IF(38 IN categories) AS kite_count,
-    COUNT_IF(ListLength(categories) == 0) AS blank_count,
-    COUNT_IF((ListLength(categories) > 0) and not (5 IN categories) and not (16 IN categories) and not (38 IN categories)) AS other_count
-FROM
-    $validate_set2;
-
+-- Обучающая выборка 1: все оставшиеся изображения (исключая золотой стандарт, тест 1 и валидацию 1)
 $train_set1 = (
     SELECT
         image_id AS image_id,
@@ -251,12 +205,14 @@ $train_set1 = (
         and (image_id not IN (select image_id from $validate_set1))
 );
 
+-- Сохранение обучающей выборки 1
 INSERT INTO `set1/train` WITH TRUNCATE
 SELECT
     *
 FROM
     $train_set1;
 
+-- Статистика обучающей выборки 1
 SELECT
     COUNT_IF(5 IN categories) AS airplane_count,
     COUNT_IF(16 IN categories) AS bird_count,
@@ -265,30 +221,3 @@ SELECT
     COUNT_IF((ListLength(categories) > 0) and not (5 IN categories) and not (16 IN categories) and not (38 IN categories)) AS other_count
 FROM
     $train_set1;
-
-$train_set2 = (
-    SELECT
-        image_id AS image_id,
-        categories AS categories
-    FROM
-        $work_set
-    WHERE
-        (image_id not IN (select image_id from $golden_set))
-        and (image_id not IN (select image_id from $test_set2))
-        and (image_id not IN (select image_id from $validate_set2))
-);
-
-INSERT INTO `set2/train` WITH TRUNCATE
-SELECT
-    *
-FROM
-    $train_set2;
-
-SELECT
-    COUNT_IF(5 IN categories) AS airplane_count,
-    COUNT_IF(16 IN categories) AS bird_count,
-    COUNT_IF(38 IN categories) AS kite_count,
-    COUNT_IF(ListLength(categories) == 0) AS blank_count,
-    COUNT_IF((ListLength(categories) > 0) and not (5 IN categories) and not (16 IN categories) and not (38 IN categories)) AS other_count
-FROM
-    $train_set2;
