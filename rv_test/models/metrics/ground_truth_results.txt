@@ -1,0 +1,31 @@
+Stage 0: Initial Training Results
+K                 Class     Images  Instances Box(Precision  Recall     mAP50      mAP50-95)
+                   all        140        208      0.311      0.358      0.234      0.119
+             airplains         35         48      0.412      0.375      0.263      0.127
+                 birds         35         90      0.288      0.356      0.234      0.129
+                 kites         35         70      0.234      0.343      0.204      0.103
+
+Stage 1: Results with Data Augmentation
+K                 Class     Images  Instances Box(Precision  Recall     mAP50      mAP50-95)
+                   all        140        208      0.472       0.42       0.39      0.209
+             airplains         35         48      0.394        0.5       0.44      0.213
+                 birds         35         90      0.492      0.489      0.471      0.264
+                 kites         35         70      0.531      0.271      0.259      0.151
+
+Stage 2.0: Results after Increasing Training Resolution (320px to 640px)
+K                 Class     Images  Instances Box(Precision  Recall     mAP50      mAP50-95)
+                   all        140        208       0.61      0.585      0.638      0.345
+             airplains         35         48      0.663      0.667      0.738      0.403
+                 birds         35         90      0.617      0.644      0.672      0.356
+                 kites         35         70      0.552      0.443      0.504      0.277
+
+Stage 2.1: Results with Additional Training Data
+K                 Class     Images  Instances Box(Precision  Recall     mAP50      mAP50-95)
+                   all        140        208      0.727      0.499      0.611      0.378
+             airplains         35         48      0.645      0.708      0.691      0.425
+                 birds         35         90      0.878      0.402       0.64      0.391
+                 kites         35         70      0.657      0.386      0.502      0.318
+
+Stage 2.2: Results with Extended Dataset and More Epochs
+K                 Class     Images  Instances Box(Precision  Recall     mAP50      mAP50-95)
+Training in progress...
