@@ -14,8 +14,7 @@ int InitProgramParams(
     std::string& videoPath,
     std::string& modelPath,
     std::optional<size_t>& averageWindowSize,
-    std::optional<size_t>& medianWindowSize,
-    std::optional<size_t>& bilateralWindowSize)
+    std::optional<size_t>& medianWindowSize)
 {
     char* video_file = nullptr;
     char* model_file = nullptr;
@@ -24,7 +23,6 @@ int InitProgramParams(
         {"model", required_argument, nullptr, 'm'},
         {"frame_averaging_window", required_argument, nullptr, 'w'}, // the width of the frame averaging window
         {"median_window", required_argument, nullptr, 'k'}, // size of kernel of median filter
-        {"bilateral_window", required_argument, nullptr, 'b'}, // size of kernel of bilateral filter
         {"help", no_argument, nullptr, 'h'},
         {nullptr, no_argument, nullptr, 0}
     };
@@ -59,22 +57,12 @@ int InitProgramParams(
 
 
                 break;
-            case 'b':
-                try {
-                    bilateralWindowSize = std::make_optional<size_t>(std::stoul(optarg));
-                } catch (...) {
-                    std::cerr << "Invalid number for --bilateral_window: " << optarg << "\n";
-                    return 1;
-                }
-
-                break;
             case 'h':
                 std::cout << "Использование: " << argv[0] << " [OPTIONS]\n";
                 std::cout << "  -v, --video FILE                    Входной файл с видео\n";
                 std::cout << "  -m, --model FILE                    Файл с моделью\n";
                 std::cout << "  -w, --frame_averaging_window [N]    Число кадров для усреднения\n";
                 std::cout << "  -k, --median_window [N]             Размер ядра фильтра скользящей медианы\n";
-                std::cout << "  -b, --bilateral_window [N]          Размер ядра билатерального фильтра\n";
                 std::cout << "  -h, --help                          Показать справку\n";
                 return 1;
             default:
@@ -113,10 +101,9 @@ int main(int argc, char *argv[]) {
         videoPath,
         modelPath,
         averageWindowSize,
-        medianWindowSize,
-        bilateralWindowSize) == 0)
+        medianWindowSize) == 0)
     {
-        TTestTracker trackerJob(videoPath, modelPath, averageWindowSize, medianWindowSize, bilateralWindowSize);
+        TTestTracker trackerJob(videoPath, modelPath, averageWindowSize, medianWindowSize);
         return trackerJob.Run();
     }
 
