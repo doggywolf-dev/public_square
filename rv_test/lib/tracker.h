@@ -47,8 +47,11 @@ public:
 protected:
     // Frame Preprocessing Methods
     // Maintains running average of frames using circular buffer
+    // This filter is effective against Gaussian noise.
     void AverageFrames(const cv::Mat& currentFrame);
+
     // Applies median filter to averaged frame using specified window size
+    // The median blur is effective against "salt-and-pepper" noise.
     void FilterFrame();
 
 private:

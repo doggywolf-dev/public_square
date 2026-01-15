@@ -9,7 +9,7 @@
 #include "tracker.h"
 
 namespace NTestTracker {
-	
+
 // Model and Inference Constants
 // The input image size (width and height) required by the ONNX model.
 constexpr size_t IMAGE_SIZE_FOR_ONNX = 640;
@@ -26,46 +26,47 @@ constexpr size_t WINDOW_WIDTH_FOR_SHOW = 1280;
 constexpr size_t WINDOW_HEIGHT_FOR_SHOW = 720;
 
 int TTestTracker::Run() {
-    //Info
-    std::cout << "OpenCV версия: " << CV_VERSION << std::endl;
-	std::cout << "ONNX Runtime версия: " << OrtGetApiBase()->GetVersionString() << std::endl;
-    std::cout << "Имя файла: " << VideoData << std::endl;
-    std::cout << "Путь до модели: " << Model << std::endl;
+    // 1. Initialization and Information Logging
+    std::cout << "System Information" << std::endl;
+    std::cout << "OpenCV version: " << CV_VERSION << std::endl;
+    std::cout << "ONNX Runtime version: " << OrtGetApiBase()->GetVersionString() << std::endl;
+    std::cout << "Video source: " << VideoData << std::endl;
+    std::cout << "Model path: " << Model << std::endl;
 
-    // Открытие видео
+    // 2. Video Capture Setup
     cv::VideoCapture video(VideoData);
     if (!video.isOpened()) {
-        std::cout << "Ошибка открытия видео!" << std::endl;
+        std::cout << "Error: Could not open video source!" << std::endl;
         return -1;
     }
 
+    // Retrieve and log video properties
     int totalFrames = static_cast<int>(video.get(cv::CAP_PROP_FRAME_COUNT));
     int width = static_cast<int>(video.get(cv::CAP_PROP_FRAME_WIDTH));
     int height = static_cast<int>(video.get(cv::CAP_PROP_FRAME_HEIGHT));
     double fps = video.get(cv::CAP_PROP_FPS);
 
-    // Вывод информации о видео
-	std::cout << "\nИнформация о видео:" << std::endl;
+    std::cout << "\nVideo Information" << std::endl;
     std::cout << "FPS: " << fps << std::endl;
-    std::cout << "Кадров: " << totalFrames << std::endl;
-    std::cout << "Ширина: " << width << std::endl;
-    std::cout << "Высота: " << height << std::endl;
+    std::cout << "Frame count: " << totalFrames << std::endl;
+    std::cout << "Resolution: " << width << "x" << height << std::endl;
 
-	
-    // Инициализация ONNX Runtime
-    Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "YOLOv8");
+    // 3. ONNX Runtime Initialization
+    Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "YOLOv8-Tracker");
     Ort::SessionOptions session_options;
     session_options.SetIntraOpNumThreads(4);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
 
-	if (!std::filesystem::exists(Model)) {
-		std::cerr << "Модель не найдена: " << Model << std::endl;
-		return -1;
-	}
+    // Ensure the model file exists before attempting to load it.
+    if (!std::filesystem::exists(Model)) {
+        std::cerr << "Модель не найдена: " << Model << std::endl;
+        return -1;
+    }
 
+    // Create an inference session from the model file.
     Ort::Session session = Ort::Session(env, Model.c_str(), session_options);
 
-    // Получаем имена входов/выходов
+    // Get the model's input and output layer names dynamically.
     Ort::AllocatorWithDefaultOptions allocator;
 
     const auto inputNameAllocated = session.GetInputNameAllocated(0, allocator);
@@ -74,67 +75,76 @@ int TTestTracker::Run() {
     const char* inputName = inputNameAllocated.get();
     const char* outputName = outputNameAllocated.get();
 
+    // 4. Pre-Loop Setup
     cv::namedWindow("Result", cv::WINDOW_NORMAL);
-    cv::resizeWindow("Result", 1280, 720);
+    cv::resizeWindow("Result", WINDOW_WIDTH_FOR_SHOW, WINDOW_HEIGHT_FOR_SHOW);
 
-	// Классы
-	std::vector<std::string> classNames = {"airplanes", "birds", "kites"};
+    const std::vector<std::string> classNames = {"airplanes", "birds", "kites"};
+    const std::vector<cv::Scalar> colors = {
+        cv::Scalar(255, 0, 0),    // Blue for airplanes
+        cv::Scalar(0, 255, 0),    // Green for birds
+        cv::Scalar(0, 0, 255)     // Red for kites
+    };
 
-	// Цвета для отрисовки классов
-	std::vector<cv::Scalar> colors = {
-		cv::Scalar(255, 0, 0),    // Синий
-		cv::Scalar(0, 255, 0),    // Зелёный
-		cv::Scalar(0, 0, 255)     // Красный
-	};
+    // Prepare a buffer for the input tensor.
+    const std::vector<int64_t> inputShape = {1, 3, IMAGE_SIZE_FOR_ONNX, IMAGE_SIZE_FOR_ONNX};
+    const size_t inputTensorSize = 1 * 3 * IMAGE_SIZE_FOR_ONNX * IMAGE_SIZE_FOR_ONNX;
+    std::vector<float> inputTensorValues(inputTensorSize);
+
+    // 5. Main Processing Loop
+    std::cout << "\nProcessing... (Press ESC to exit, Space to pause)\n" << std::endl;
+    const auto startTime = std::chrono::high_resolution_clock::now();
 
     cv::Mat frame;
     int frameCount = 0;
-	bool firstFrame = true;
-	
-	std::vector<int64_t> inputShape = {1, 3, IMAGE_SIZE_FOR_ONNX, IMAGE_SIZE_FOR_ONNX};
-    size_t inputTensorSize = 1 * 3 * IMAGE_SIZE_FOR_ONNX * IMAGE_SIZE_FOR_ONNX;
-	
-	std::cout << "\nОбработка... (ESC - выход, Пробел - пауза)\n" << std::endl;
-	auto startTime = std::chrono::high_resolution_clock::now();
+    bool firstFrame = true;
 
     while (video.read(frame)) {
-		if (frame.empty()) {
-			break;
-		}
-		
-        frameCount++;
-		
-		try {
-           // Предобработка кадров
-		   // Усреднение по кадрам
-			AverageFrames(frame);
-			// Скользящая медиана по пикселям в оригинальном разрешении
-			FilterFrame();
+        if (frame.empty()) {
+            std::cout << "End of video stream." << std::endl;
+            break;
+        }
 
-            // Подготовка для YOLO
+        frameCount++;
+
+        try {
+            // 5.1 Frame Preprocessing (Temporal and Spatial Filtering)
+            AverageFrames(frame); // Apply moving average filter if enabled.
+            FilterFrame(); // Apply median blur filter if enabled.
+            // `filteredFrame` now contains the result of these optional steps.
+
+            // 5.2 Inference Preprocessing (Manual Tensor Preparation)
+            // The model requires a 640x640 RGB image, normalized to [0, 1], in NCHW format.
+            // Resize the frame to the model's required input dimensions.
             cv::Mat resizedFilteredFrame;
             cv::resize(filteredFrame, resizedFilteredFrame, cv::Size(IMAGE_SIZE_FOR_ONNX, IMAGE_SIZE_FOR_ONNX));
-            
+
+            // Convert from BGR (OpenCV's default) to RGB, which the model expects.
             cv::Mat rgbFrame;
             cv::cvtColor(resizedFilteredFrame, rgbFrame, cv::COLOR_BGR2RGB);
-            
+
+            // Normalize pixel values from the [0, 255] integer range to the [0.0, 1.0] float range.
             cv::Mat floatRgbFrame;
             rgbFrame.convertTo(floatRgbFrame, CV_32F, 1.0 / 255.0);
 
-            // Преобразование в NCHW
-            std::vector<float> inputTensorValues(inputTensorSize);
+            // Convert the image from HWC (Height, Width, Channels) to NCHW (Batch, Channels, Height, Width) format.
             std::vector<cv::Mat> channels(3);
             cv::split(floatRgbFrame, channels);
-            
+
             for (int c = 0; c < 3; ++c) {
-                memcpy(
-                    inputTensorValues.data() + c * IMAGE_SIZE_FOR_ONNX * IMAGE_SIZE_FOR_ONNX,
-                    channels[c].data,
-                    IMAGE_SIZE_FOR_ONNX * IMAGE_SIZE_FOR_ONNX * sizeof(float)
-                );
+                if(channels[c].isContinuous()) {
+                    memcpy(
+                        inputTensorValues.data() + c * IMAGE_SIZE_FOR_ONNX * IMAGE_SIZE_FOR_ONNX,
+                        channels[c].data,
+                        IMAGE_SIZE_FOR_ONNX * IMAGE_SIZE_FOR_ONNX * sizeof(float)
+                    );
+                } else {
+                    std::cout << "!!!" << std::endl;;
+                    continue;
+                }
             }
 
-            // Создаём тензор
+            // 5.3 Create ONNX Tensor and Run Inference
             auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
             Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
                 memoryInfo,
@@ -144,10 +154,9 @@ int TTestTracker::Run() {
                 inputShape.size()
             );
 
-            // Инференс
             std::vector<const char*> inputNamesVec = {inputName};
             std::vector<const char*> outputNamesVec = {outputName};
-            
+
             auto outputTensors = session.Run(
                 Ort::RunOptions{nullptr},
                 inputNamesVec.data(),
@@ -156,18 +165,18 @@ int TTestTracker::Run() {
                 outputNamesVec.data(),
                 1
             );
-			
-            // Получаем результаты [1, 300, 6]
+
+            // 5.4 Post-processing (Parse and Draw Detections)
             float* outputData = outputTensors[0].GetTensorMutableData<float>();
             auto outputShape = outputTensors[0].GetTensorTypeAndShapeInfo().GetShape();
-            
+
             if (firstFrame) {
-                std::cout << "Output format: [";
+                std::cout << "Model Output Shape: [";
                 for (size_t i = 0; i < outputShape.size(); ++i) {
                     std::cout << outputShape[i];
                     if (i < outputShape.size() - 1) {
-						std::cout << ", ";
-					}
+                        std::cout << ", ";
+                    }
                 }
                 std::cout << "]" << std::endl;
                 firstFrame = false;
@@ -176,135 +185,148 @@ int TTestTracker::Run() {
             int numDetections = outputShape[1];  // 300
             int detectionSize = outputShape[2];  // 6
 
-            float xScale = static_cast<float>(frame.cols) / IMAGE_SIZE_FOR_ONNX;
-            float yScale = static_cast<float>(frame.rows) / IMAGE_SIZE_FOR_ONNX;
+            // Calculate scaling factors to map detections from the model's input size (640x640) back to the original frame size.
+            const float xScale = static_cast<float>(frame.cols) / IMAGE_SIZE_FOR_ONNX;
+            const float yScale = static_cast<float>(frame.rows) / IMAGE_SIZE_FOR_ONNX;
 
+            // Draw on a copy of the pristine, original frame.
             cv::Mat resultFrame = frame.clone();
             int validDetections = 0;
+            int textThickness = 1;
 
-			// Обработка детекций: [xLeft, yTop, xRight, yBottom, confidence, classId]
-			for (int i = 0; i < numDetections; ++i) {
-				int baseIdx = i * detectionSize;
-				
-				float xLeft = outputData[baseIdx + 0];
-				float yTop = outputData[baseIdx + 1];
-				float xRight    = outputData[baseIdx + 2];
-				float yBottom   = outputData[baseIdx + 3];
-				float confidence = outputData[baseIdx + 4];
-				int classId = static_cast<int>(outputData[baseIdx + 5]);
-				
-				// Фильтрация
-				if (confidence < CONF_THRESHOLD || classId < 0 || classId >= NUM_CLASSES) {
-					continue;
-				}
-				
-				// Масштабируем под исходное разрешение кадра
-				int left   = static_cast<int>(xLeft * xScale);
-				int top    = static_cast<int>(yTop * yScale);
-				int right  = static_cast<int>(xRight * xScale);
-				int bottom = static_cast<int>(yBottom * yScale);
-				
-				// Ограничиваем границами кадра
-		        if ((std::min({left, right, top, bottom}) < 0) || (std::max(left, right) >= frame.cols) || (std::max(top, bottom) >= frame.rows)) {
-				    std::cout << "The borders of the bbox are outside the frame: left=" << left << ", top=" << top << ", right=" << right << " bottom=" << bottom << std::endl;
-				}
-				left   = std::max(0, std::min(left,   frame.cols - 1));
-				top    = std::max(0, std::min(top,    frame.rows - 1));
-				right  = std::max(0, std::min(right,  frame.cols));
-				bottom = std::max(0, std::min(bottom, frame.rows));
-				
-				if (right <= left || bottom <= top) {
-				    std::cout << "Incorrect bbox borders: left=" << left << ", top=" << top << ", right=" << right << " bottom=" << bottom << std::endl;
-					continue;
-				}
-				
-				cv::Rect box(left, top, right - left, bottom - top);
-				validDetections++;                
-                
+            // The model output is expected to be already post-processed with NMS.
+            // The format is [x_left, y_top, x_right, y_bottom, confidence, class_id] for each detection
+            for (int i = 0; i < numDetections; ++i) {
+                const int baseIdx = i * detectionSize;
+                const float confidence = outputData[baseIdx + 4];
+                const int classId = static_cast<int>(outputData[baseIdx + 5]);
+
+                // Filter out low-confidence detections and invalid classes.
+                if (confidence < CONF_THRESHOLD || classId < 0 || classId >= NUM_CLASSES) {
+                    continue;
+                }
+
+                // Scale bounding box coordinates to the original frame's dimensions.
+                int left   = static_cast<int>(outputData[baseIdx + 0] * xScale);
+                int top    = static_cast<int>(outputData[baseIdx + 1] * yScale);
+                int right  = static_cast<int>(outputData[baseIdx + 2] * xScale);
+                int bottom = static_cast<int>(outputData[baseIdx + 3] * yScale);
+
+                // Clamp coordinates to be within frame boundaries to prevent drawing errors.
+                left   = std::max(0, std::min(left,   frame.cols - 1));
+                top    = std::max(0, std::min(top,    frame.rows - 1));
+                right  = std::max(0, std::min(right,  frame.cols));
+                bottom = std::max(0, std::min(bottom, frame.rows));
+
+                if (right <= left || bottom <= top) {
+                    continue; // Skip invalid boxes with zero or negative area.
+                }
+
+                cv::Rect box(left, top, right - left, bottom - top);
+                validDetections++;
+
+                // Draw the bounding box.
+                int lineThickness = 2;
                 cv::Scalar color = colors[classId];
-                cv::rectangle(resultFrame, box, color, 2);
-                
-                std::string label = classNames[classId] + " " + 
-                                   cv::format("%.2f", confidence);
-                
-                int baseline = 0;
-                cv::Size labelSize = cv::getTextSize(
-                    label, cv::FONT_HERSHEY_SIMPLEX, 0.6, 1, &baseline
-                );
-                
-                int labelTop = std::max(top, labelSize.height + 8);
-                
-                cv::rectangle(
-                    resultFrame,
-                    cv::Point(left, labelTop - labelSize.height - 8),
-                    cv::Point(left + labelSize.width + 4, labelTop + baseline),
-                    color, cv::FILLED
-                );
-                
+                cv::rectangle(resultFrame, box, color / 2, lineThickness + 1); // Dark colored rectangle for the outline
+                cv::rectangle(resultFrame, box, color, lineThickness);
+
+                // Prepare the label text with class name and confidence score.
+                std::string label = classNames[classId] + " " + cv::format("%.2f", confidence);
+
+                // Define text properties
+                int fontFace = cv::FONT_HERSHEY_SIMPLEX;
+                double fontScale = 0.7;
+                cv::Point text_origin(left, top - 10); // Position just above the bounding box
+
+                // Draw a black outline ("shadow") for the text first
                 cv::putText(
-                    resultFrame, label,
-                    cv::Point(left + 2, labelTop - 4),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.6,
-                    cv::Scalar(255, 255, 255), 1, cv::LINE_AA
+                    resultFrame,
+                    label,
+                    text_origin,
+                    fontFace,
+                    fontScale,
+                    color / 2, // Dark color for the outline
+                    textThickness + 1, // Make the outline slightly thicker
+                    cv::LINE_AA
+                );
+
+                // Draw the main text in color on top of the outline
+                cv::putText(
+                    resultFrame,
+                    label,
+                    text_origin,
+                    fontFace,
+                    fontScale,
+                    color, // The actual color of the text
+                    textThickness, // Main text thickness
+                    cv::LINE_AA
                 );
             }
 
-            // Логирование
+            // 5.5 Logging and Display
             if (frameCount % 30 == 0) {
                 auto now = std::chrono::high_resolution_clock::now();
                 auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - startTime).count();
-                std::cout << "Frame " << frameCount << "/" << totalFrames 
-                          << " | Time: " << elapsed << "s | Detections: " << validDetections << std::endl;
+                std::cout << "Frame " << frameCount << "/" << totalFrames
+                          << " | Time elapsed: " << elapsed << "s | Detections in frame: " << validDetections << std::endl;
             }
 
-            // Инфо на кадре
-            std::string frameInfo = cv::format("Frame: %d/%d | Detections: %d", 
+            // Draw overlay information on the frame for visual feedback.
+            std::string frameInfo = cv::format("Frame: %d/%d | Detections: %d",
                 frameCount, totalFrames, validDetections);
-            
+
             cv::putText(resultFrame, frameInfo, cv::Point(10, 30),
                        cv::FONT_HERSHEY_SIMPLEX, 0.7,
-                       cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
+                       cv::Scalar(127, 0, 127), textThickness + 1, cv::LINE_AA);
+            cv::putText(resultFrame, frameInfo, cv::Point(10, 30),
+                       cv::FONT_HERSHEY_SIMPLEX, 0.7,
+                       cv::Scalar(255, 0, 255), textThickness, cv::LINE_AA);
 
             cv::imshow("Result", resultFrame);
-            
+
         } catch (const std::exception& e) {
             std::cerr << "Frame " << frameCount << ": " << e.what() << std::endl;
             continue;
         }
-        
-        int key = cv::waitKey(1);
-        if (key == 27) {
-            std::cout << "\nОстановлено" << std::endl;
+
+        // Handle user input for interactivity.
+        int key = cv::waitKey(1); // Wait 1ms for a key press.
+        if (key == 27) { // 27 is the ASCII code for the ESC key.
+            std::cout << "\nProcessing stopped by user." << std::endl;
             break;
+        } else if (key == 32) { // 32 is the ASCII code for the Space bar.
+            std::cout << "Paused. Press any key to continue..." << std::endl;
+            cv::waitKey(0); // Wait indefinitely for a key press to unpause.
         }
     }
 
-    // Освобождаем ресурсы
+    // 6. Cleanup
     video.release();
     cv::destroyAllWindows();
-	
-	std::cout << "\nОбработано кадров: " << frameCount << std::endl;
+
+    std::cout << "\nTotal frames processed: " << frameCount << std::endl;
 
     return 0;
 };
 
 void TTestTracker::AverageFrames(const cv::Mat& currentFrame) {
     if (currentFrame.empty()) {
-        throw std::runtime_error("Empty frame in AverageFrames");
+        throw std::runtime_error("Cannot average an empty frame.");
     }
-
-    cv::Mat floatMat;
-    currentFrame.convertTo(floatMat, CV_32F);
 
     size_t actualListSize = AveragingListSize.value_or(1);
 
-    // One-frame window (no averaging)
+    // If averaging is disabled (window size is 1 or not set), simply clone the current frame.
     if (actualListSize <= 1) {
         averageFrame = currentFrame.clone();
         return;
     }
 
-    // Add new frame to sum for мoving average
+    // Convert the input frame to 32-bit float for accurate summation to prevent pixel value overflow.
+    cv::Mat floatMat;
+    currentFrame.convertTo(floatMat, CV_32F);
+
     if (FrameListForPreprocessing.empty()) {
         sumFrame = floatMat.clone();
     } else {
@@ -313,33 +335,38 @@ void TTestTracker::AverageFrames(const cv::Mat& currentFrame) {
 
     FrameListForPreprocessing.push_back(floatMat.clone());
 
-    // Remove oldest frame if window is full
+    // If the window is full, remove the oldest frame from the sum and from the deque.
     if (FrameListForPreprocessing.size() > actualListSize) {
         sumFrame -= FrameListForPreprocessing.front();
         FrameListForPreprocessing.pop_front();
     }
 
-    // Calculate average
+    // Calculate the average and convert it back to 8-bit unsigned char for display/further processing.
     cv::Mat avgMat = sumFrame / static_cast<double>(FrameListForPreprocessing.size());
     avgMat.convertTo(averageFrame, CV_8U);
-   
+
     return;
 };
 
 void TTestTracker::FilterFrame() {
     if (averageFrame.empty()) {
-        throw std::runtime_error("averageFrame is empty in FilterFrame");
+        throw std::runtime_error("Cannot filter an empty frame. 'AverageFrames' must be called first.");
     }
 
+    // Get the median filter window size. If not set, default to 1 (which means no filtering).
+    // The median filter kernel size must be an odd number greater than 1.
+    // This bitwise OR trick efficiently ensures the size is odd (e.g., 4|1=5, 5|1=5).
     size_t actualMedianWindowSize = MedianFilterWindowSize.value_or(1) | 1;
 
     if (actualMedianWindowSize <= 1) {
+        // If window size is 1, no filtering is needed; just copy the input to the output.
         averageFrame.copyTo(filteredFrame);
     } else {
+        // Apply the median blur. This is effective against "salt-and-pepper" noise.
         cv::medianBlur(averageFrame, filteredFrame, actualMedianWindowSize);
     }
-	
-	return;
+
+    return;
 }
 
 }  // namespace NTestTracker
