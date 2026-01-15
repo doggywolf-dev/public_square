@@ -59,7 +59,7 @@ int TTestTracker::Run() {
 
     // Ensure the model file exists before attempting to load it.
     if (!std::filesystem::exists(Model)) {
-        std::cerr << "Модель не найдена: " << Model << std::endl;
+        std::cerr << "The model was not found: " << Model << std::endl;
         return -1;
     }
 
@@ -132,17 +132,18 @@ int TTestTracker::Run() {
             cv::split(floatRgbFrame, channels);
 
             for (int c = 0; c < 3; ++c) {
-                if(channels[c].isContinuous()) {
-                    memcpy(
-                        inputTensorValues.data() + c * IMAGE_SIZE_FOR_ONNX * IMAGE_SIZE_FOR_ONNX,
-                        channels[c].data,
-                        IMAGE_SIZE_FOR_ONNX * IMAGE_SIZE_FOR_ONNX * sizeof(float)
+                if (!channels[c].isContinuous()) {
+                    throw std::runtime_error(
+                        "Channel " + std::to_string(c) + " is not continuous in memory"
                     );
-                } else {
-                    std::cout << "!!!" << std::endl;;
-                    continue;
                 }
-            }
+
+                memcpy(
+                    inputTensorValues.data() + c * IMAGE_SIZE_FOR_ONNX * IMAGE_SIZE_FOR_ONNX,
+                    channels[c].data,
+                    IMAGE_SIZE_FOR_ONNX * IMAGE_SIZE_FOR_ONNX * sizeof(float)
+                );
+             }
 
             // 5.3 Create ONNX Tensor and Run Inference
             auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
@@ -207,15 +208,15 @@ int TTestTracker::Run() {
                 }
 
                 // Scale bounding box coordinates to the original frame's dimensions.
-                int left   = static_cast<int>(outputData[baseIdx + 0] * xScale);
-                int top    = static_cast<int>(outputData[baseIdx + 1] * yScale);
-                int right  = static_cast<int>(outputData[baseIdx + 2] * xScale);
+                int left = static_cast<int>(outputData[baseIdx + 0] * xScale);
+                int top = static_cast<int>(outputData[baseIdx + 1] * yScale);
+                int right = static_cast<int>(outputData[baseIdx + 2] * xScale);
                 int bottom = static_cast<int>(outputData[baseIdx + 3] * yScale);
 
                 // Clamp coordinates to be within frame boundaries to prevent drawing errors.
-                left   = std::max(0, std::min(left,   frame.cols - 1));
-                top    = std::max(0, std::min(top,    frame.rows - 1));
-                right  = std::max(0, std::min(right,  frame.cols));
+                left = std::max(0, std::min(left, frame.cols - 1));
+                top = std::max(0, std::min(top, frame.rows - 1));
+                right = std::max(0, std::min(right, frame.cols));
                 bottom = std::max(0, std::min(bottom, frame.rows));
 
                 if (right <= left || bottom <= top) {
@@ -239,7 +240,7 @@ int TTestTracker::Run() {
                 double fontScale = 0.7;
                 cv::Point text_origin(left, top - 10); // Position just above the bounding box
 
-                // Draw a black outline ("shadow") for the text first
+                // Draw a dark outline ("shadow") for the text first
                 cv::putText(
                     resultFrame,
                     label,
